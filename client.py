@@ -11,17 +11,6 @@ import copy
 import maskpass
 import traceback
 
-def stream_read_in(cli,length):
-    cache=b''
-    step=768*768
-    while not len(cache)==length:
-        if (length-len(cache))<=step:
-            cache+=cli.recv(length-len(cache))
-        else:
-            cache+=cli.recv(step)
-        #print(cache)
-    return cache
-
 public_key,private_key=rsa.newkeys(2048)
 encoded_public_key=pickle.dumps(public_key)
 encoded_public_key_len=struct.pack('L',len(encoded_public_key))
@@ -87,7 +76,6 @@ def main():
       lenth=struct.pack('L',len(cont))
       s.send(lenth)
       s.send(cont)
-      time.sleep(0.5)
       sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
       sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
       sever_public_key=pickle.loads(sever_encoded_public_key)
@@ -142,7 +130,7 @@ def main():
           print('no such file')
           continue
         file_size=os.path.getsize(file_path)
-        size=piece_size=1024*768
+        size=piece_size=1024*150
         num=piece_num=file_size//piece_size
         if file_size%piece_size>0:
           piece_num+=1
@@ -187,7 +175,7 @@ def main():
               s.recv(1)
               #print(i)
             piece=f.read(size)
-            s.send(struct.pack('L',len(piece)))
+            s.send(end_size)
             s.recv(1)
             s.send(piece)
             s.recv(1)
@@ -240,7 +228,7 @@ def main():
                 #print(cont,'/',file_piece_num+1,'|',lenth)
                 _=lenth
                 s.send(b'_')
-                piece=stream_read_in(s,lenth)
+                piece=s.recv(lenth)
                 f.write(piece)
                 #f.flush()
                 s.send('V'.encode())
