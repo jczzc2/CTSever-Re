@@ -11,9 +11,19 @@ import copy
 import maskpass
 import traceback
 
+def stream_read_in(cli,length,step=768*768):
+    cache=b''
+    while not len(cache)==length:
+        if (length-len(cache))<=step:
+            cache+=cli.recv(length-len(cache))
+        else:
+            cache+=cli.recv(step)
+        #print(cache)
+    return cache
+
 public_key,private_key=rsa.newkeys(2048)
 encoded_public_key=pickle.dumps(public_key)
-encoded_public_key_len=struct.pack('L',len(encoded_public_key))
+encoded_public_key_len=struct.pack("=L",len(encoded_public_key))
 
 def stick(encoded_messages,private_key):
   encoded_messages=pickle.loads(encoded_messages)
@@ -25,8 +35,6 @@ def stick(encoded_messages,private_key):
   return long_message
 
 def main():
-  print('enter your username and password')
-  print('if you are new member,just continue with no input')
   con=True
   if input('IP(IPv6/IPv4):')=='IPv6':
     ip=socket.AF_INET6
@@ -40,6 +48,8 @@ def main():
   ser_port=input('sever_port:')
   with open('sever.json','wb') as se:
     pickle.dump([ser_name,int(ser_port)],se)
+  print('enter your username and password')
+  print('if you are new member,just continue with no input')
   while con:
     usrname=input('usrname:').encode()
     name=usrname.decode()
@@ -51,10 +61,10 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='name_test'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        lenth=struct.pack('L',len(usrname))
+        lenth=struct.pack("=L",len(usrname))
         s.send(lenth)
         s.send(usrname)
         command=s.recv(1).decode()
@@ -73,18 +83,19 @@ def main():
       s=socket.socket(ip,pro)
       s.connect((ser_name,int(ser_port)))
       cont='sign_up'.encode()
-      lenth=struct.pack('L',len(cont))
+      lenth=struct.pack("=L",len(cont))
       s.send(lenth)
       s.send(cont)
-      sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-      sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+      time.sleep(0.5)
+      sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+      sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
       sever_public_key=pickle.loads(sever_encoded_public_key)
       encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
       encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-      lenth=struct.pack('L',len(encrypted_usrname))
+      lenth=struct.pack("=L",len(encrypted_usrname))
       s.send(lenth)
       s.send(encrypted_usrname)
-      lenth=struct.pack('L',len(encrypted_key_password))
+      lenth=struct.pack("=L",len(encrypted_key_password))
       s.send(lenth)
       s.send(encrypted_key_password)
       break
@@ -94,21 +105,21 @@ def main():
       s=socket.socket(ip,pro)
       s.connect((ser_name,int(ser_port)))
       cont='login_in'.encode()
-      lenth=struct.pack('L',len(cont))
+      lenth=struct.pack("=L",len(cont))
       s.send(lenth)
       s.send(cont)
-      sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-      sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+      sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+      sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
       sever_public_key=pickle.loads(sever_encoded_public_key)
       encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
       encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-      lenth=struct.pack('L',len(encrypted_usrname))
+      lenth=struct.pack("=L",len(encrypted_usrname))
       s.send(lenth)
       s.send(encrypted_usrname)
-      lenth=struct.pack('L',len(encrypted_key_password))
+      lenth=struct.pack("=L",len(encrypted_key_password))
       s.send(lenth)
       s.send(encrypted_key_password)
-      cmd=s.recv(1).decode()
+      cmd=stream_read_in(s,1,step=4).decode()
       if cmd=='T':
         con=False
       else:print('account error')
@@ -130,7 +141,7 @@ def main():
           print('no such file')
           continue
         file_size=os.path.getsize(file_path)
-        size=piece_size=1024*150
+        size=piece_size=1024*768
         num=piece_num=file_size//piece_size
         if file_size%piece_size>0:
           piece_num+=1
@@ -139,29 +150,29 @@ def main():
           piece_num
           num-=1
           end_size=piece_size
-        end_size=struct.pack('L',end_size)
-        piece_num=struct.pack('L',piece_num)
-        piece_size=struct.pack('L',piece_size)
+        end_size=struct.pack("=L",end_size)
+        piece_num=struct.pack("=L",piece_num)
+        piece_size=struct.pack("=L",piece_size)
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='file_send'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          lenth=struct.pack('L',len(file_name.encode()))
+          lenth=struct.pack("=L",len(file_name.encode()))
           s.send(lenth)
           s.send(file_name.encode())
           s.send(piece_num)
@@ -170,15 +181,15 @@ def main():
               piece=f.read(size)
               s.send(piece_size)
               #time.sleep(0.02)
-              s.recv(1)
+              stream_read_in(s,1,step=4)
               s.send(piece)
-              s.recv(1)
+              stream_read_in(s,1,step=4)
               #print(i)
             piece=f.read(size)
-            s.send(end_size)
-            s.recv(1)
+            s.send(struct.pack("=L",len(piece)))
+            stream_read_in(s,1,step=4)
             s.send(piece)
-            s.recv(1)
+            stream_read_in(s,1,step=4)
             print('end')
         else:print('account error')
       elif command=='get_file':
@@ -194,41 +205,41 @@ def main():
         s.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,False)
         s.connect((ser_name,int(ser_port)))
         cont='file_get'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
         cmd=s.recv(1).decode()
         if cmd=='T':
-          lenth=struct.pack('L',len(author_name))
+          lenth=struct.pack("=L",len(author_name))
           s.send(lenth)
           s.send(author_name)
-          lenth=struct.pack('L',len(file_name))
+          lenth=struct.pack("=L",len(file_name))
           s.send(lenth)
           s.send(file_name)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
-            file_piece_num=struct.unpack('L',s.recv(4))[0]
+            file_piece_num=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
             print(file_piece_num,'pieces in all')
             with open(save_path+os.sep+file,'bw') as f:
               cont=0
               for i in tqdm.tqdm(range(file_piece_num+1)):
                 #lenth=0
-                lenth=copy.deepcopy(struct.unpack('Q',s.recv(8))[0])
+                lenth=copy.deepcopy(struct.unpack("=Q",stream_read_in(s,8,step=4))[0])
                 #print(cont,'/',file_piece_num+1,'|',lenth)
                 _=lenth
                 s.send(b'_')
-                piece=s.recv(lenth)
+                piece=stream_read_in(s,lenth)
                 f.write(piece)
                 #f.flush()
                 s.send('V'.encode())
@@ -257,27 +268,27 @@ def main():
           s=socket.socket(ip,pro)
           s.connect((ser_name,int(ser_port)))
           cont='send_message'.encode()
-          lenth=struct.pack('L',len(cont))
+          lenth=struct.pack("=L",len(cont))
           s.send(lenth)
           s.send(cont)
-          sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-          sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+          sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+          sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
           sever_public_key=pickle.loads(sever_encoded_public_key)
           encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
           encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-          lenth=struct.pack('L',len(encrypted_usrname))
+          lenth=struct.pack("=L",len(encrypted_usrname))
           s.send(lenth)
           s.send(encrypted_usrname)
-          lenth=struct.pack('L',len(encrypted_key_password))
+          lenth=struct.pack("=L",len(encrypted_key_password))
           s.send(lenth)
           s.send(encrypted_key_password)
-          control=s.recv(1).decode()
+          control=stream_read_in(s,1,step=4).decode()
           if control=='T':
-            sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-            sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+            sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
             sever_public_key=pickle.loads(sever_encoded_public_key)
             message=rsa.encrypt(message,sever_public_key)
-            message_len=struct.pack('L',len(message))
+            message_len=struct.pack("=L",len(message))
             s.send(message_len)
             s.send(message)
           else:
@@ -287,22 +298,22 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='chat_exit'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
         print("sever's reply") 
-        print(s.recv(1).decode())
+        print(stream_read_in(s,1,step=4).decode())
         print('exited room')
       elif command=='exit':
         break
@@ -318,24 +329,24 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='change_password'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         new_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          lenth=struct.pack('L',len(new_encrypted_key_password))
+          lenth=struct.pack("=L",len(new_encrypted_key_password))
           s.send(lenth)
           s.send(new_encrypted_key_password)
       elif command=='post_publish':
@@ -356,25 +367,25 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='add_post'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
           with open(path+post_name,'br')as f:
             pack=pickle.dumps([topic,intro,f.read()])
-            pack_lenth=struct.pack('L',len(pack))
+            pack_lenth=struct.pack("=L",len(pack))
             s.send(pack_lenth)
             time.sleep(0.01)
             s.send(pack)
@@ -382,23 +393,23 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='change_acc_creatable'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          print(s.recv(5).decode())
+          print(stream_read_in(s,5,step=4).decode())
         else:
           print('account_error')
       elif command=='ban_post':
@@ -406,23 +417,23 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='ban_post'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          s.send(struct.pack('Q',post_code))
+          s.send(struct.pack("=Q",post_code))
         else:
           print('account_error')
       elif command=='add_usr':
@@ -431,31 +442,31 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='add_usr'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         new_key_password=hashlib.sha512(new_usr_password).hexdigest().encode()
         new_usr_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
         new_usr_encrypted_usrname=rsa.encrypt(new_usr_name,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
         cmd=s.recv(1).decode()
         if cmd=='T':
-          s.send(struct.pack('L',len(new_usr_encrypted_usrname)))
+          s.send(struct.pack("=L",len(new_usr_encrypted_usrname)))
           time.sleep(0.03)
           s.send(new_usr_encrypted_usrname)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
-            lenth=struct.pack('L',len(new_usr_encrypted_key_password))
+            lenth=struct.pack("=L",len(new_usr_encrypted_key_password))
             s.send(lenth)
             s.send(new_usr_encrypted_key_password)
           else:
@@ -468,29 +479,29 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='add_executive'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         #new_key_password=hashlib.sha512(new_usr_password).hexdigest().encode()
         #new_usr_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
         new_usr_encrypted_usrname=rsa.encrypt(new_usr_name,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          s.send(struct.pack('L',len(new_usr_encrypted_usrname)))
+          s.send(struct.pack("=L",len(new_usr_encrypted_usrname)))
           time.sleep(0.03)
           s.send(new_usr_encrypted_usrname)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
             print('successfully_added_an_executive')
           else:
@@ -503,29 +514,29 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='del_executive'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         #new_key_password=hashlib.sha512(new_usr_password).hexdigest().encode()
         #new_usr_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
         new_usr_encrypted_usrname=rsa.encrypt(new_usr_name,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          s.send(struct.pack('L',len(new_usr_encrypted_usrname)))
+          s.send(struct.pack("=L",len(new_usr_encrypted_usrname)))
           time.sleep(0.03)
           s.send(new_usr_encrypted_usrname)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
             print('successfully_deled_an_executive')
           else:
@@ -538,29 +549,29 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='ban_account'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         #new_key_password=hashlib.sha512(new_usr_password).hexdigest().encode()
         #new_usr_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
         ban_usr_encrypted_usrname=rsa.encrypt(ban_usr_name,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          s.send(struct.pack('L',len(ban_usr_encrypted_usrname)))
+          s.send(struct.pack("=L",len(ban_usr_encrypted_usrname)))
           time.sleep(0.03)
           s.send(ban_usr_encrypted_usrname)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
             print('successfully_banned_an_account')
           else:
@@ -573,29 +584,29 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='unban_account'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         #new_key_password=hashlib.sha512(new_usr_password).hexdigest().encode()
         #new_usr_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
         unban_usr_encrypted_usrname=rsa.encrypt(unban_usr_name,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          s.send(struct.pack('L',len(unban_usr_encrypted_usrname)))
+          s.send(struct.pack("=L",len(unban_usr_encrypted_usrname)))
           time.sleep(0.03)
           s.send(unban_usr_encrypted_usrname)
-          cmd=s.recv(1).decode()
+          cmd=stream_read_in(s,1,step=4).decode()
           if cmd=='T':
             print('successfully_unbanned_an_account')
           else:
@@ -608,24 +619,24 @@ def main():
         s=socket.socket(ip,pro)
         s.connect((ser_name,int(ser_port)))
         cont='get_bbs_end'.encode()
-        lenth=struct.pack('L',len(cont))
+        lenth=struct.pack("=L",len(cont))
         s.send(lenth)
         s.send(cont)
-        sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-        sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
         sever_public_key=pickle.loads(sever_encoded_public_key)
         encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
         encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
         #new_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
-        lenth=struct.pack('L',len(encrypted_usrname))
+        lenth=struct.pack("=L",len(encrypted_usrname))
         s.send(lenth)
         s.send(encrypted_usrname)
-        lenth=struct.pack('L',len(encrypted_key_password))
+        lenth=struct.pack("=L",len(encrypted_key_password))
         s.send(lenth)
         s.send(encrypted_key_password)
-        cmd=s.recv(1).decode()
+        cmd=stream_read_in(s,1,step=4).decode()
         if cmd=='T':
-          pointer_end=struct.unpack('Q',s.recv(8))[0]
+          pointer_end=struct.unpack("=Q",stream_read_in(s,8,step=4))[0]
           pointer=pointer_end
           print('last_post',pointer)
         else:
@@ -641,28 +652,29 @@ def main():
             s=socket.socket(ip,pro)
             s.connect((ser_name,int(ser_port)))
             cont='get_post'.encode()
-            lenth=struct.pack('L',len(cont))
+            lenth=struct.pack("=L",len(cont))
             s.send(lenth)
             s.send(cont)
-            sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-            sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+            sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
             sever_public_key=pickle.loads(sever_encoded_public_key)
             encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
             encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
             #new_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
-            lenth=struct.pack('L',len(encrypted_usrname))
+            lenth=struct.pack("=L",len(encrypted_usrname))
             s.send(lenth)
             s.send(encrypted_usrname)
-            lenth=struct.pack('L',len(encrypted_key_password))
+            lenth=struct.pack("=L",len(encrypted_key_password))
             s.send(lenth)
             s.send(encrypted_key_password)
-            cmd=s.recv(1).decode()
+            cmd=stream_read_in(s,1,step=4).decode()
             if cmd=='T':
               s.send(encoded_public_key_len)
               s.send(encoded_public_key)
-              s.send(struct.pack('Q',post_code))
-              encrypted_post_len=struct.unpack('L',s.recv(4))[0]
-              post=stick(s.recv(encrypted_post_len),private_key)
+              s.send(struct.pack("=Q",post_code))
+              encrypted_post_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+              #post=stick(s.recv(encrypted_post_len),private_key)
+              post=stick(stream_read_in(s,encrypted_post_len),private_key)
               os.system('cls')
               print('-'*50)
               print(post[0])
@@ -677,24 +689,24 @@ def main():
             s=socket.socket(ip,pro)
             s.connect((ser_name,int(ser_port)))
             cont='get_bbs_end'.encode()
-            lenth=struct.pack('L',len(cont))
+            lenth=struct.pack("=L",len(cont))
             s.send(lenth)
             s.send(cont)
-            sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-            sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+            sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
             sever_public_key=pickle.loads(sever_encoded_public_key)
             encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
             encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
             #new_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
-            lenth=struct.pack('L',len(encrypted_usrname))
+            lenth=struct.pack("=L",len(encrypted_usrname))
             s.send(lenth)
             s.send(encrypted_usrname)
-            lenth=struct.pack('L',len(encrypted_key_password))
+            lenth=struct.pack("=L",len(encrypted_key_password))
             s.send(lenth)
             s.send(encrypted_key_password)
-            cmd=s.recv(1).decode()
+            cmd=stream_read_in(s,1,step=4).decode()
             if cmd=='T':
-              pointer_end=struct.unpack('Q',s.recv(8))[0]
+              pointer_end=struct.unpack("=Q",stream_read_in(s,8,step=4))[0]
               pointer=pointer_end
               print('last_post',pointer)
             else:
@@ -704,28 +716,29 @@ def main():
             s=socket.socket(ip,pro)
             s.connect((ser_name,int(ser_port)))
             cont='ask_post'.encode()
-            lenth=struct.pack('L',len(cont))
+            lenth=struct.pack("=L",len(cont))
             s.send(lenth)
             s.send(cont)
-            sever_encoded_public_key_len=struct.unpack('L',s.recv(4))[0]
-            sever_encoded_public_key=s.recv(sever_encoded_public_key_len)
+            sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
             sever_public_key=pickle.loads(sever_encoded_public_key)
             encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
             encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
             #new_encrypted_key_password=rsa.encrypt(new_key_password,sever_public_key)
-            lenth=struct.pack('L',len(encrypted_usrname))
+            lenth=struct.pack("=L",len(encrypted_usrname))
             s.send(lenth)
             s.send(encrypted_usrname)
-            lenth=struct.pack('L',len(encrypted_key_password))
+            lenth=struct.pack("=L",len(encrypted_key_password))
             s.send(lenth)
             s.send(encrypted_key_password)
-            cmd=s.recv(1).decode()
+            cmd=stream_read_in(s,1,step=4).decode()
             if cmd=='T':
               s.send(encoded_public_key_len)
               s.send(encoded_public_key)
-              s.send(struct.pack('Q',pointer))
-              encrypted_bbs_list_len=struct.unpack('L',s.recv(4))[0]
-              encrypted_bbs_list=s.recv(encrypted_bbs_list_len)
+              s.send(struct.pack("=Q",pointer))
+              encrypted_bbs_list_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+              #encrypted_bbs_list=s.recv(encrypted_bbs_list_len)
+              encrypted_bbs_list=stream_read_in(s,encrypted_bbs_list_len)
               bbs_list=stick(encrypted_bbs_list,private_key)
               for item in bbs_list:
                 print('-'*45)

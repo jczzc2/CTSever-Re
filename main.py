@@ -1,5 +1,6 @@
 if __name__=='__main__':
     choice=input('sever/client>>')
+    """
     match choice:
         case 's':
             import sever
@@ -19,3 +20,10 @@ if __name__=='__main__':
         case 'cli':
             import client
             client.main()
+    """
+    if choice=='s':
+        import sever
+        sever.main()
+    else:
+        import client
+        client.main()
