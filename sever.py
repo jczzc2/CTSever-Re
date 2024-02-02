@@ -11,9 +11,13 @@ import rsa
 
 def stream_read_in(cli,length):
     cache=b''
-    while not len(cache)>=length:
-        cache+=cli.recv(1)
-        print(cache)
+    step=768*768
+    while not len(cache)==length:
+        if (length-len(cache))<=step:
+            cache+=cli.recv(length-len(cache))
+        else:
+            cache+=cli.recv(step)
+        #print(cache)
     return cache
 
 def split(long_message,public_key):
@@ -59,23 +63,23 @@ def handler(c,addr):
       name=c.recv(name_len).decode()
       if name in names:
         c.send('T'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='sign_up':
       if not account_creatable:
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
       name_len=struct.unpack('L',c.recv(4))[0]
       name=rsa.decrypt(c.recv(name_len),private_key).decode()
       if name in names:
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       key_lenth=struct.unpack('L',c.recv(4))[0]
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
-      c.shutdown(socket.SHUT_RDWR)
+      #
       lock.acquire()
       names.append(name)
       passwords[name]=key
@@ -83,7 +87,7 @@ def handler(c,addr):
         json.dump(names,f)
       with open('passwords.json','w') as f:
         json.dump(passwords,f)
-      os.mkdir('files\\'+name)
+      os.mkdir('files'+os.sep+name)
       lock.release()
     elif con=='login_in':
       c.send(encoded_public_key_len)
@@ -94,14 +98,14 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='file_send':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -111,22 +115,24 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
         file_name_lenth=struct.unpack('L',c.recv(4))[0]
         file_name=c.recv(file_name_lenth).decode()
         file_piece_num=struct.unpack('L',c.recv(4))[0]
-        with open('files\\'+name+'\\'+file_name,'bw') as f:
+        with open('files'+os.sep+name+os.sep+file_name,'bw') as f:
           for i in range(file_piece_num):
             lenth=struct.unpack('L',c.recv(4))[0]
-            print(addr,':',lenth)
+            #c.close()
             c.send(b'_')
             piece=stream_read_in(c,lenth)
+            print(addr,':',len(piece))
             f.write(piece)
             #f.flush()
             c.send('V'.encode())
+          """
           lenth=struct.unpack('L',c.recv(4))[0]
           print(addr,':',lenth)
           c.send(b'_')
@@ -134,10 +140,11 @@ def handler(c,addr):
           f.write(piece)
           f.flush()
           c.send('V'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+          """
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='file_get':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -147,7 +154,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
@@ -155,27 +162,27 @@ def handler(c,addr):
         author_name=c.recv(author_name_lenth).decode()
         file_name_lenth=struct.unpack('L',c.recv(4))[0]
         file_name=c.recv(file_name_lenth).decode()
-        if os.path.exists('files\\'+author_name+'\\'+file_name) or (author_name in banned_accounts):
+        if os.path.exists('files'+os.sep+author_name+os.sep+file_name) or (author_name in banned_accounts):
           c.send('T'.encode())
-          file_size=os.path.getsize('files\\'+author_name+'\\'+file_name)
-          size=piece_size=1024*500
+          file_size=os.path.getsize('files'+os.sep+author_name+os.sep+file_name)
+          size=piece_size=1024*768
           num=piece_num=file_size//piece_size
           if file_size%piece_size>0:
-            #piece_num+=1
+            piece_num+=1
             #num+=1
             end_size=file_size%piece_size
           else:
-            piece_num-=1
+            #piece_num-=1
             num-=1
             end_size=piece_size
           end_size=struct.pack('L',end_size)
           piece_num=struct.pack('L',piece_num)
           piece_size=struct.pack('L',piece_size)
           c.send(piece_num)
-          with open('files\\'+author_name+'\\'+file_name,'br') as f:
+          with open('files'+os.sep+author_name+os.sep+file_name,'br') as f:
             for i in range(num+1):
               piece=f.read(size)
-              lenth=struct.pack('q',len(piece))
+              lenth=struct.pack('Q',len(piece))
               c.send(lenth)
               time.sleep(0.02)
               c.recv(1)
@@ -183,22 +190,21 @@ def handler(c,addr):
               c.recv(1)
               print(addr,struct.unpack('Q',lenth)[0],len(lenth))
               #print(i)
-            """
             piece=f.read(size)
-            c.send(struct.pack('L',len(piece)))
+            c.send(struct.pack('Q',len(piece)))
+            c.recv(1)
             c.send(piece)
             c.recv(1)
             print(addr,len(piece))
             #print('end')
-            """
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
         else:
           c.send('F'.encode())
-          c.shutdown(socket.SHUT_RDWR)
-        #c.shutdown(socket.SHUT_RDWR)
+          c.close()
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='send_message':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -208,22 +214,23 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
         c.send(encoded_public_key_len)
         c.send(encoded_public_key)
         message_len=struct.unpack('L',c.recv(4))[0]
-        message=c.recv(message_len)
-        c.shutdown(socket.SHUT_RDWR)
+        #message=c.recv(message_len)
+        message=stream_read_in(c,message_len)
+        c.close()
         message=rsa.decrypt(message,private_key)
         message=pickle.loads(message)
         print(message)
         chat_messages.append(message)
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='get_message':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -233,7 +240,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
@@ -255,10 +262,10 @@ def handler(c,addr):
         c.send(return_list_len)
         c.send(return_list)
         c.send(new_end_num)
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='chat_exit':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -268,16 +275,16 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         chat_messages.append(['system',name+' escaped'])
         print(str(['system',name+' escaped']))
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='change_password':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -287,13 +294,13 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
         key_lenth=struct.unpack('L',c.recv(4))[0]
         key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         passwords[name]=key
         lock.release()
@@ -301,7 +308,7 @@ def handler(c,addr):
           json.dump(passwords,f)
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='add_post':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -311,13 +318,13 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send('T'.encode())
         pack_len=struct.unpack('L',c.recv(4))[0]
-        pack=pickle.loads(c.recv(pack_len))
-        c.shutdown(socket.SHUT_RDWR)
+        pack=pickle.loads(stream_read_in(c,pack_len))
+        c.close()
         topic,intro,content=pack
         #bbs.append((topic,name))
         path='posts'+os.sep+'{}-{}'.format(time.localtime().tm_mon,time.localtime().tm_mday)
@@ -343,7 +350,7 @@ def handler(c,addr):
         print(bbs)
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='ask_post':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -353,7 +360,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -373,10 +380,10 @@ def handler(c,addr):
         encrypted_bbs_list_len,encrypted_bbs_list=split(encoded_bbs_list,client_public_key)
         c.send(encrypted_bbs_list_len)
         c.send(encrypted_bbs_list)
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='get_post':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -386,7 +393,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -401,10 +408,10 @@ def handler(c,addr):
         encrypted_post_len,encrypted_post=split(encoded_post,client_public_key)
         c.send(encrypted_post_len)
         c.send(encrypted_post)
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='get_bbs_end':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -414,15 +421,15 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or (name in banned_accounts):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
         c.send(struct.pack('Q',bbs_end_code-1))
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='change_acc_creatable':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -432,7 +439,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (True and (name not in admin)):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -441,10 +448,12 @@ def handler(c,addr):
           c.send(b'True ')
         else:
           c.send(b'False')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
+        with open('account_creatable.json','w') as f:
+          json.dump(account_creatable,f)
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        #
     elif con=='ban_post':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -454,7 +463,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if (name not in names) or ((name not in executives) and (name not in admin)):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -471,10 +480,10 @@ def handler(c,addr):
         except:
           traceback.print_exc()
           lock.release()
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='add_usr':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -484,7 +493,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (name not in admin):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -492,13 +501,13 @@ def handler(c,addr):
         new_usr_name=rsa.decrypt(c.recv(new_usr_name_len),private_key).decode()
         if new_usr_name in names:
           c.send(b'F')
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
           return False
         c.send(b'T')
         new_usr_key_lenth=struct.unpack('L',c.recv(4))[0]
         new_usr_key=rsa.decrypt(c.recv(new_usr_key_lenth),private_key).decode()
         print('adim_adding_usr')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         try:
           names.append(new_usr_name)
@@ -514,7 +523,7 @@ def handler(c,addr):
           lock.release()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='add_executive':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -524,7 +533,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (name not in admin):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -532,10 +541,10 @@ def handler(c,addr):
         new_executive_name=rsa.decrypt(c.recv(new_executive_name_len),private_key).decode()
         if not new_executive_name in names:
           c.send(b'F')
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
           return False
         c.send(b'T')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         try:
           cache=set(executives)
@@ -550,7 +559,7 @@ def handler(c,addr):
           lock.release()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='del_executive':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -560,7 +569,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (name not in admin):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -568,10 +577,10 @@ def handler(c,addr):
         new_executive_name=rsa.decrypt(c.recv(new_executive_name_len),private_key).decode()
         if not new_executive_name in executives:
           c.send(b'F')
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
           return False
         c.send(b'T')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         try:
           cache=set(executives)
@@ -586,7 +595,7 @@ def handler(c,addr):
           lock.release()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='ban_account':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -596,7 +605,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (name not in admin):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -604,10 +613,10 @@ def handler(c,addr):
         banned_name=rsa.decrypt(c.recv(banned_name_len),private_key).decode()
         if (not banned_name in names) or (banned_name in admin) or (banned_name in executives):
           c.send(b'F')
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
           return False
         c.send(b'T')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         try:
           cache=set(banned_accounts)
@@ -622,7 +631,7 @@ def handler(c,addr):
           lock.release()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     elif con=='unban_account':
       c.send(encoded_public_key_len)
       c.send(encoded_public_key)
@@ -632,7 +641,7 @@ def handler(c,addr):
       key=rsa.decrypt(c.recv(key_lenth),private_key).decode()
       if ((name not in names) or (name in banned_accounts)) or (name not in admin):
         c.send(b'F')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         return False
       if passwords[name]==key:
         c.send(b'T')
@@ -640,10 +649,10 @@ def handler(c,addr):
         unbanned_name=rsa.decrypt(c.recv(unbanned_name_len),private_key).decode()
         if (not unbanned_name in names) or (not unbanned_name in banned_accounts):
           c.send(b'F')
-          c.shutdown(socket.SHUT_RDWR)
+          c.close()
           return False
         c.send(b'T')
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
         lock.acquire()
         try:
           cache=set(banned_accounts)
@@ -658,13 +667,14 @@ def handler(c,addr):
           lock.release()
       else:
         c.send('F'.encode())
-        c.shutdown(socket.SHUT_RDWR)
+        c.close()
     else:
-      c.shutdown(socket.SHUT_RDWR)
+      c.close()
   except Exception as e:
     print(e)
     traceback.print_exc()
-    c.shutdown(socket.SHUT_RDWR)
+    #
+  c.close()
   print(addr,'over')
 
 def client(s):
@@ -693,7 +703,7 @@ public_key,private_key=rsa.newkeys(2048)
 encoded_public_key=pickle.dumps(public_key)
 encoded_public_key_len=struct.pack('L',len(encoded_public_key))
 chat_messages=[['system',"Hello_world!"],]
-account_creatable=False
+account_creatable=True
 with open('names.json','r') as f:
   names=json.load(f)
 with open('passwords.json','r') as f:
@@ -705,7 +715,9 @@ with open('bbs_len.json','r') as f:
 with open('executives.json','r') as f:
   executives=json.load(f)
 with open('banned_accounts.json','r') as f:
-    banned_accounts=json.load(f)
+  banned_accounts=json.load(f)
+with open('account_creatable.json','r') as f:
+  account_creatable=json.load(f)
 def main():
   #chat_messages=[['system',"Hello_world!"],]
   s=socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
