@@ -10,6 +10,15 @@ import tqdm
 import copy
 import maskpass
 import traceback
+import random
+from pyDes import des, CBC, PAD_PKCS5
+
+def des_key_generate():
+  iv=''
+  for i in range(8):
+    choices=[chr(random.randint(97,122)),chr(random.randint(48,57)),chr(random.randint(65,90))]
+    iv+=random.choice(choices)
+  return iv
 
 def stream_read_in(cli,length,step=768*768):
     cache=b''
@@ -24,6 +33,8 @@ def stream_read_in(cli,length,step=768*768):
 public_key,private_key=rsa.newkeys(2048)
 encoded_public_key=pickle.dumps(public_key)
 encoded_public_key_len=struct.pack("=L",len(encoded_public_key))
+token_change_sign=time.time()
+
 
 def stick(encoded_messages,private_key):
   encoded_messages=pickle.loads(encoded_messages)
@@ -35,6 +46,9 @@ def stick(encoded_messages,private_key):
   return long_message
 
 def main():
+  global public_key,private_key
+  global encoded_public_key,encoded_public_key_len
+  global token_change_sign
   con=True
   if input('IP(IPv6/IPv4):')=='IPv6':
     ip=socket.AF_INET6
@@ -240,6 +254,297 @@ def main():
                 _=lenth
                 s.send(b'_')
                 piece=stream_read_in(s,lenth)
+                f.write(piece)
+                #f.flush()
+                s.send('V'.encode())
+                #print(i)
+                #os.system('cls')
+                cont+=1
+              f.flush()
+              f.close()
+          else:
+            print('no such file/author')
+        else:print('account error')
+      if command=='batch_send_file':
+        batch_source_path=input('batch_source_path>>')
+        batch_source=input('batch_source>>')
+        with open(batch_source_path+os.sep+batch_source) as f:
+          sources=json.load(f)
+        failed_list=[]
+        for source in sources:
+          low_failed_list=[]
+          for file_name in source[1]:
+            file_path=source[0]+os.sep
+            try:
+              file_path+=file_name
+              print('uploading',file_path)
+              if not os.path.exists(file_path):
+                print('no such file')
+                continue
+              file_size=os.path.getsize(file_path)
+              size=piece_size=1024*768
+              num=piece_num=file_size//piece_size
+              if file_size%piece_size>0:
+                piece_num+=1
+                end_size=file_size%piece_size
+              else:
+                piece_num
+                num-=1
+                end_size=piece_size
+              end_size=struct.pack("=L",end_size)
+              piece_num=struct.pack("=L",piece_num)
+              piece_size=struct.pack("=L",piece_size)
+              s=socket.socket(ip,pro)
+              s.connect((ser_name,int(ser_port)))
+              cont='file_send'.encode()
+              lenth=struct.pack("=L",len(cont))
+              s.send(lenth)
+              s.send(cont)
+              sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+              sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
+              sever_public_key=pickle.loads(sever_encoded_public_key)
+              encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
+              encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
+              lenth=struct.pack("=L",len(encrypted_usrname))
+              s.send(lenth)
+              s.send(encrypted_usrname)
+              lenth=struct.pack("=L",len(encrypted_key_password))
+              s.send(lenth)
+              s.send(encrypted_key_password)
+              cmd=stream_read_in(s,1,step=4).decode()
+              if cmd=='T':
+                lenth=struct.pack("=L",len(file_name.encode()))
+                s.send(lenth)
+                s.send(file_name.encode())
+                s.send(piece_num)
+                with open(file_path,'br') as f:
+                  for i in tqdm.tqdm(range(num)):
+                    piece=f.read(size)
+                    s.send(piece_size)
+                    #time.sleep(0.02)
+                    stream_read_in(s,1,step=4)
+                    s.send(piece)
+                    stream_read_in(s,1,step=4)
+                    #print(i)
+                  piece=f.read(size)
+                  s.send(struct.pack("=L",len(piece)))
+                  stream_read_in(s,1,step=4)
+                  s.send(piece)
+                  stream_read_in(s,1,step=4)
+                  print('end')
+              else:
+                print('account_error')
+                raise RuntimeError
+            except:
+              low_failed_list.append(file_name)
+          if len(low_failed_list)>0:
+            failed_list.append([source[0],low_failed_list])
+        if len(failed_list)>0:
+          with open('upload_failures.json','w') as f:
+            json.dump(failed_list,f)
+          print('Failed uploads will be recorded in this file:')
+          print(os.getcwd()+os.sep+'upload_failures.json')
+      if command=='batch_get_file':
+        save_path=input('save_path>>')
+        if not os.path.exists(save_path):
+          print('no such path')
+          continue
+        batch_source_path=input('batch_source_path>>')
+        batch_source=input('batch_source>>')
+        with open(batch_source_path+os.sep+batch_source) as f:
+          sources=json.load(f)
+        failed_list=[]
+        for item in sources:
+          author=item[0]
+          file=item[1]
+          try:
+            print('now downloading',file,'of',author)
+            if not os.path.exists(save_path):
+              print('no such path')
+              continue
+            author_name=author.encode()
+            file_name=file.encode()
+            s=socket.socket(ip,pro)
+            s.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,False)
+            s.connect((ser_name,int(ser_port)))
+            cont='file_get'.encode()
+            lenth=struct.pack("=L",len(cont))
+            s.send(lenth)
+            s.send(cont)
+            sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
+            sever_public_key=pickle.loads(sever_encoded_public_key)
+            encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
+            encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
+            lenth=struct.pack("=L",len(encrypted_usrname))
+            s.send(lenth)
+            s.send(encrypted_usrname)
+            lenth=struct.pack("=L",len(encrypted_key_password))
+            s.send(lenth)
+            s.send(encrypted_key_password)
+            cmd=s.recv(1).decode()
+            if cmd=='T':
+              lenth=struct.pack("=L",len(author_name))
+              s.send(lenth)
+              s.send(author_name)
+              lenth=struct.pack("=L",len(file_name))
+              s.send(lenth)
+              s.send(file_name)
+              cmd=stream_read_in(s,1,step=4).decode()
+              if cmd=='T':
+                file_piece_num=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+                print(file_piece_num,'pieces in all')
+                with open(save_path+os.sep+file,'bw') as f:
+                  cont=0
+                  for i in tqdm.tqdm(range(file_piece_num+1)):
+                    #lenth=0
+                    lenth=copy.deepcopy(struct.unpack("=Q",stream_read_in(s,8,step=4))[0])
+                    #print(cont,'/',file_piece_num+1,'|',lenth)
+                    _=lenth
+                    s.send(b'_')
+                    piece=stream_read_in(s,lenth)
+                    f.write(piece)
+                    #f.flush()
+                    s.send('V'.encode())
+                    #print(i)
+                    #os.system('cls')
+                    cont+=1
+                  f.flush()
+                  f.close()
+              else:
+                print('no such file/author')
+            else:
+              print('account error')
+              raise RuntimeError
+          except:
+            traceback.print_exc()
+            failed_list.append([author,file])
+          if len(failed_list)>0:
+            print("there's",len(failed_list),"failed downloads.we will config them in the 'failed.json'.")
+            with open(save_path+os.sep+'failed_list.json','w') as f:
+              json.dump(failed_list,f)
+      if command=='des_send_file':
+        des_key=des_key_generate()
+        des_key_class = des(des_key, CBC, des_key, pad=None, padmode=PAD_PKCS5)
+        file_path=input('file_path:')+os.sep
+        file_name=input('file_name:')
+        file_path+=file_name
+        if not os.path.exists(file_path):
+          print('no such file')
+          continue
+        file_size=os.path.getsize(file_path)
+        size=piece_size=1024*1
+        num=piece_num=file_size//piece_size
+        if file_size%piece_size>0:
+          piece_num+=1
+          end_size=file_size%piece_size
+        else:
+          piece_num
+          num-=1
+          end_size=piece_size
+        end_size=struct.pack("=L",end_size)
+        piece_num=struct.pack("=L",piece_num)
+        piece_size=struct.pack("=L",piece_size)
+        s=socket.socket(ip,pro)
+        s.connect((ser_name,int(ser_port)))
+        cont='des_file_send'.encode()
+        lenth=struct.pack("=L",len(cont))
+        s.send(lenth)
+        s.send(cont)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
+        sever_public_key=pickle.loads(sever_encoded_public_key)
+        encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
+        encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
+        lenth=struct.pack("=L",len(encrypted_usrname))
+        s.send(lenth)
+        s.send(encrypted_usrname)
+        lenth=struct.pack("=L",len(encrypted_key_password))
+        s.send(lenth)
+        s.send(encrypted_key_password)
+        cmd=stream_read_in(s,1,step=4).decode()
+        if cmd=='T':
+          lenth=struct.pack("=L",len(file_name.encode()))
+          s.send(lenth)
+          s.send(file_name.encode())
+          s.send(piece_num)
+          encrypted_des_key=rsa.encrypt(des_key.encode(),sever_public_key)
+          lenth=struct.pack("=L",len(encrypted_des_key))
+          s.send(lenth)
+          s.send(encrypted_des_key)
+          with open(file_path,'br') as f:
+            for i in tqdm.tqdm(range(num)):
+              piece=f.read(size)
+              piece=des_key_class.encrypt(piece,padmode=PAD_PKCS5)
+              piece_size=struct.pack("=L",len(piece))
+              s.send(piece_size)
+              #time.sleep(0.02)
+              stream_read_in(s,1,step=4)
+              s.send(piece)
+              stream_read_in(s,1,step=4)
+              #print(i)
+            piece=f.read(size)
+            s.send(struct.pack("=L",len(piece)))
+            stream_read_in(s,1,step=4)
+            s.send(piece)
+            stream_read_in(s,1,step=4)
+            print('end')
+        else:print('account error')
+      elif command=='des_get_file':
+        des_key=des_key_generate()
+        des_key_class = des(des_key, CBC, des_key, pad=None, padmode=PAD_PKCS5)
+        author=input('author:')
+        file=input('file_name:')
+        save_path=input('save_path:')
+        if not os.path.exists(save_path):
+          print('no such path')
+          continue
+        author_name=author.encode()
+        file_name=file.encode()
+        s=socket.socket(ip,pro)
+        s.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,False)
+        s.connect((ser_name,int(ser_port)))
+        cont='des_file_get'.encode()
+        lenth=struct.pack("=L",len(cont))
+        s.send(lenth)
+        s.send(cont)
+        sever_encoded_public_key_len=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+        sever_encoded_public_key=stream_read_in(s,sever_encoded_public_key_len,step=4)
+        sever_public_key=pickle.loads(sever_encoded_public_key)
+        encrypted_usrname=rsa.encrypt(usrname,sever_public_key)
+        encrypted_key_password=rsa.encrypt(key_password,sever_public_key)
+        lenth=struct.pack("=L",len(encrypted_usrname))
+        s.send(lenth)
+        s.send(encrypted_usrname)
+        lenth=struct.pack("=L",len(encrypted_key_password))
+        s.send(lenth)
+        s.send(encrypted_key_password)
+        cmd=s.recv(1).decode()
+        if cmd=='T':
+          lenth=struct.pack("=L",len(author_name))
+          s.send(lenth)
+          s.send(author_name)
+          lenth=struct.pack("=L",len(file_name))
+          s.send(lenth)
+          s.send(file_name)
+          cmd=stream_read_in(s,1,step=4).decode()
+          if cmd=='T':
+            encrypted_des_key=rsa.encrypt(des_key.encode(),sever_public_key)
+            lenth=struct.pack("=L",len(encrypted_des_key))
+            s.send(lenth)
+            s.send(encrypted_des_key)
+            file_piece_num=struct.unpack("=L",stream_read_in(s,4,step=4))[0]
+            print(file_piece_num,'pieces in all')
+            with open(save_path+os.sep+file,'bw') as f:
+              cont=0
+              for i in tqdm.tqdm(range(file_piece_num+1)):
+                #lenth=0
+                lenth=copy.deepcopy(struct.unpack("=Q",stream_read_in(s,8,step=4))[0])
+                #print(cont,'/',file_piece_num+1,'|',lenth)
+                _=lenth
+                s.send(b'_')
+                piece=stream_read_in(s,lenth)
+                piece=des_key_class.decrypt(piece,padmode=PAD_PKCS5)
                 f.write(piece)
                 #f.flush()
                 s.send('V'.encode())
@@ -614,6 +919,14 @@ def main():
         else:
           print('account_error')
           continue
+      elif command=="change_token":
+        print()
+        print('changing_token...')
+        public_key,private_key=rsa.newkeys(2048)
+        encoded_public_key=pickle.dumps(public_key)
+        encoded_public_key_len=struct.pack("=L",len(encoded_public_key))
+        print('token_changed')
+        token_change_sign=time.time()
       elif command=='bbs':
         os.system('cls')
         s=socket.socket(ip,pro)
@@ -753,6 +1066,19 @@ def main():
           elif cmd=='exit':
             os.system('cls')
             break
+      #
+      if time.time()-token_change_sign>=1800:
+        print()
+        print("""It has come to our attention that you have not changed your token for a long time, which would seriously threaten the security of your account, and for the security of your account, we will now force a token change""")
+        print('changing_token...')
+        public_key,private_key=rsa.newkeys(2048)
+        encoded_public_key=pickle.dumps(public_key)
+        encoded_public_key_len=struct.pack("=L",len(encoded_public_key))
+        print('token_changed')
+        token_change_sign=time.time()
+      elif time.time()-token_change_sign>=600:
+        print()
+        print("""We noticed that you have not changed the token for some time, please pay attention to the security of your account and use the "change_token" command to change the token in time""")
     except:
       #print(e)
       traceback.print_exc()
